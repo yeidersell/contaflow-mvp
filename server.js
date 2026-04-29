@@ -251,14 +251,16 @@ app.post('/webhook', async (req, res) => {
     tx.notas      = `Recibido por WhatsApp desde ${from}`;
 
     addTransaction(tx);
-    await replyWhatsApp(from, buildWhatsAppReply(tx));
+    await replyWhatsApp(from, buildWhatsAppReply(tx)).catch(e =>
+      console.error('[twilio] No se pudo responder:', e.message)
+    );
 
     console.log(`[webhook] ✅ Transacción guardada: ${tx.tipo} ${tx.monto} — ${tx.fecha}`);
   } catch (err) {
     console.error('[webhook] Error:', err.message);
     await replyWhatsApp(from,
       '❌ No pude procesar el comprobante. Asegúrate de enviar una imagen clara del comprobante o factura.'
-    );
+    ).catch(e => console.error('[twilio] No se pudo responder:', e.message));
   }
 });
 
