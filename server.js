@@ -99,6 +99,8 @@ async function geminiPost(model, apiVer, base64Image, mediaType) {
   return data.candidates[0].content.parts[0].text.trim();
 }
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
 async function analyzeReceipt(base64Image, mediaType) {
   const attempts = [
     { model: 'gemini-2.5-flash',      ver: 'v1beta' },
@@ -108,21 +110,29 @@ async function analyzeReceipt(base64Image, mediaType) {
   let lastErr;
 
   for (const { model, ver } of attempts) {
-    try {
-      console.log(`[gemini] Intentando ${ver}/${model}`);
-      const text = await geminiPost(model, ver, base64Image, mediaType);
-      console.log(`[gemini] OK con ${ver}/${model}:`, text.slice(0, 200));
+    for (let retry = 0; retry < 2; retry++) {
+      try {
+        console.log(`[gemini] Intentando ${ver}/${model}${retry ? ' (reintento)' : ''}`);
+        const text = await geminiPost(model, ver, base64Image, mediaType);
+        console.log(`[gemini] OK con ${ver}/${model}:`, text.slice(0, 200));
 
-      let clean = text.replace(/^```json?\s*/i, '').replace(/\s*```$/, '').trim();
-      try { return JSON.parse(clean); } catch {}
-      const match = clean.match(/\{[\s\S]*\}/);
-      if (match) return JSON.parse(match[0]);
-      throw new Error('JSON inválido');
-    } catch (err) {
-      const status = err.response?.status;
-      const msg    = JSON.stringify(err.response?.data?.error?.message || err.message);
-      console.error(`[gemini] ${ver}/${model} → ${status}: ${msg.slice(0, 200)}`);
-      lastErr = err;
+        let clean = text.replace(/^```json?\s*/i, '').replace(/\s*```$/, '').trim();
+        try { return JSON.parse(clean); } catch {}
+        const match = clean.match(/\{[\s\S]*\}/);
+        if (match) return JSON.parse(match[0]);
+        throw new Error('JSON inválido');
+      } catch (err) {
+        const status = err.response?.status;
+        const msg    = JSON.stringify(err.response?.data?.error?.message || err.message);
+        console.error(`[gemini] ${ver}/${model} → ${status}: ${msg.slice(0, 200)}`);
+        lastErr = err;
+        if ((status === 429 || status === 503) && retry === 0) {
+          console.log('[gemini] Esperando 4s antes de reintentar...');
+          await sleep(4000);
+        } else {
+          break;
+        }
+      }
     }
   }
   throw lastErr;
